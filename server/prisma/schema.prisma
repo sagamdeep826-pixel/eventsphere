@@ -1,0 +1,212 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String          @id @default(uuid())
+  email         String          @unique
+  passwordHash  String
+  name          String
+  role          String          @default("STUDENT") // STUDENT, ORGANIZER, ADMIN
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  studentProfile StudentProfile?
+  registrations  Registration[]
+  communityPosts CommunityPost[]
+  comments       Comment[]
+  feedbacks      Feedback[]
+  notifications  Notification[]
+  organizedEvents Event[]       @relation("OrganizerEvents")
+  certificates   Certificate[]
+}
+
+model StudentProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  college          String
+  branch           String
+  year             Int
+  interests        String   // JSON string array of tags
+  skills           String   // JSON string array of skills
+  preferredTypes   String   // JSON string array of category slugs
+
+  seatAllocations  Seat[]
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String?
+  events      Event[]
+}
+
+model Event {
+  id              String        @id @default(uuid())
+  title           String
+  slug            String        @unique
+  description     String
+  schedule        DateTime
+  venue           String
+  isOnline        Boolean       @default(false)
+  isTeamEvent     Boolean       @default(false)
+  minTeamSize     Int           @default(1)
+  maxTeamSize     Int           @default(1)
+  maxSeats        Int
+  seatsLeft       Int
+  price           Float         @default(0.0)
+  rules           String?
+  prize           String?
+  posterUrl       String?
+  status          String        @default("PENDING_APPROVAL") // DRAFT, PENDING_APPROVAL, PUBLISHED, CANCELLED, COMPLETED
+
+  organizerId     String
+  organizer       User          @relation("OrganizerEvents", fields: [organizerId], references: [id], onDelete: Cascade)
+
+  categoryId      String
+  category        Category      @relation(fields: [categoryId], references: [id])
+
+  venueLayoutId   String?
+  venueLayout     VenueLayout?  @relation(fields: [venueLayoutId], references: [id])
+
+  registrations   Registration[]
+  seats           Seat[]
+  communityPosts  CommunityPost[]
+  feedbacks       Feedback[]
+  certificates    Certificate[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model VenueLayout {
+  id          String   @id @default(uuid())
+  name        String
+  rows        Int
+  columns     Int
+  layoutData  String   // JSON describing reserved/accessible seats, sections
+  events      Event[]
+  seats       Seat[]
+}
+
+model Seat {
+  id            String         @id @default(uuid())
+  eventId       String
+  event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  venueLayoutId String
+  venueLayout   VenueLayout    @relation(fields: [venueLayoutId], references: [id])
+  rowNumber     Int
+  colNumber     Int
+  seatLabel     String         // e.g., "A1", "B12"
+  isBooked      Boolean        @default(false)
+  isAccessible  Boolean        @default(false)
+  studentId     String?
+  studentProfile StudentProfile? @relation(fields: [studentId], references: [id])
+  registrationId String?       @unique
+  registration  Registration?  @relation(fields: [registrationId], references: [id])
+}
+
+model Registration {
+  id            String             @id @default(uuid())
+  eventId       String
+  event         Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status        String             @default("CONFIRMED") // CONFIRMED, WAITLISTED, CANCELLED
+  teamName      String?
+  teamMembers   String?            // JSON array of team member names/emails
+  ticket        Ticket?
+  seat          Seat?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([eventId, userId])
+}
+
+model Ticket {
+  id             String       @id @default(uuid())
+  registrationId String       @unique
+  registration   Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  qrCode         String       @unique
+  isUsed         Boolean      @default(false)
+  usedAt         DateTime?
+  attendanceLogs AttendanceLog[]
+}
+
+model AttendanceLog {
+  id         String   @id @default(uuid())
+  ticketId   String
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  scannedBy  String
+  scannedAt  DateTime @default(now())
+  status     String   // "SUCCESS", "DUPLICATE", "INVALID", "EXPIRED"
+}
+
+model CommunityPost {
+  id        String    @id @default(uuid())
+  eventId   String
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  content   String
+  isAnnouncement Boolean @default(false)
+  tags      String?   // JSON array for teammate search
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  comments  Comment[]
+}
+
+model Comment {
+  id        String        @id @default(uuid())
+  postId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime      @default(now())
+}
+
+model Feedback {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Int      // 1 to 5
+  tags      String?  // JSON array of tags (venue, food, content, organization)
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+}
+
+model Certificate {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  resultType  String   // "PARTICIPANT", "WINNER", "RUNNER_UP", "ORGANIZER"
+  title       String
+  issuedAt    DateTime @default(now())
+  certificateUrl String?
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
